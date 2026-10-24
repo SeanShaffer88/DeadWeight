@@ -1,0 +1,4 @@
+/target
+# Local audit data — audits describe a real PC and its usage history; never commit them.
+audits/
+*.audit.json

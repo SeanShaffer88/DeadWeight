@@ -1,0 +1,11 @@
+[package]
+name = "deadweight"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "Finds what is installed on a Windows PC but never used — read-only audit, evidence first"
+
+[dependencies]
+dw-core = { workspace = true }
+dw-win = { workspace = true }

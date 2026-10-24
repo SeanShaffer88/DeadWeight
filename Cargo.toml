@@ -1,0 +1,15 @@
+[workspace]
+resolver = "2"
+members = ["crates/dw-core", "crates/dw-win", "crates/deadweight"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+rust-version = "1.80"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dw-core = { path = "crates/dw-core", version = "0.1.0" }
+dw-win = { path = "crates/dw-win", version = "0.1.0" }

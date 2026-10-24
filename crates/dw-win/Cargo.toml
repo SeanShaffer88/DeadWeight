@@ -1,0 +1,24 @@
+[package]
+name = "dw-win"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+description = "DeadWeight Windows collector: installed apps, optional features, capabilities, and usage evidence (Prefetch, UserAssist, BAM)"
+
+[dependencies]
+dw-core = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# The collector's live-system access is Windows-only. All bindings come
+# from the `windows` crate (0.61, the version the rest of SEAN's
+# projects pin); `windows-sys` is not needed — the only API surface
+# used here is the registry, present in `windows` 0.61.3's generated
+# sources. DISM is driven through `std::process` and Prefetch through
+# `std::fs`, so no further bindings are required.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+    "Win32_Foundation",
+    "Win32_System_Registry",
+] }

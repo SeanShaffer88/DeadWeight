@@ -1,0 +1,162 @@
+{
+  "schema_version": 1,
+  "captured_at": "2026-10-24T15:30:00Z",
+  "evidence_window_days": 200,
+  "items": [
+    {
+      "name": "Ancient Tax Prep 2019",
+      "publisher": "ExampleSoft",
+      "kind": "App",
+      "state": "installed",
+      "size_bytes": 450000000,
+      "install_date": "2020-03-01",
+      "install_location": "C:\\Program Files\\ExampleSoft\\TaxPrep",
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "Everyday Notes",
+      "publisher": "ExampleSoft",
+      "kind": "App",
+      "state": "installed",
+      "size_bytes": 82000000,
+      "install_date": "2023-05-11",
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": 1792487700,
+        "run_count": 48,
+        "sources": [
+          "UserAssist",
+          "Prefetch"
+        ],
+        "matched_exe": "everydaynotes.exe"
+      }
+    },
+    {
+      "name": "Tiny Helper",
+      "publisher": null,
+      "kind": "App",
+      "state": "installed",
+      "size_bytes": null,
+      "install_date": "2021-06-15",
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": 1736078400,
+        "run_count": null,
+        "sources": [
+          "Prefetch"
+        ],
+        "matched_exe": "tinyhelper.exe"
+      }
+    },
+    {
+      "name": "Photo Studio Deluxe",
+      "publisher": "ExampleSoft",
+      "kind": "App",
+      "state": "installed",
+      "size_bytes": 1900000000,
+      "install_date": "2026-08-02",
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "Microsoft Defender Antivirus",
+      "publisher": "Microsoft Corporation",
+      "kind": "App",
+      "state": "installed",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "TelnetClient",
+      "publisher": null,
+      "kind": "OptionalFeature",
+      "state": "Enabled",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "SMB1Protocol",
+      "publisher": null,
+      "kind": "OptionalFeature",
+      "state": "Enabled",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "NetFx3",
+      "publisher": null,
+      "kind": "OptionalFeature",
+      "state": "Enabled",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "App.XpsViewer~~~~0.0.1.0",
+      "publisher": null,
+      "kind": "Capability",
+      "state": "Not Present",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    },
+    {
+      "name": "Microsoft-Windows-Security-IdentityListener~~~~0.0.1.0",
+      "publisher": null,
+      "kind": "Capability",
+      "state": "Installed",
+      "size_bytes": null,
+      "install_date": null,
+      "install_location": null,
+      "evidence": {
+        "last_used_unix": null,
+        "run_count": null,
+        "sources": [],
+        "matched_exe": null
+      }
+    }
+  ]
+}
