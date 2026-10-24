@@ -1,16 +1,22 @@
 //! Registry-backed sources: the Uninstall keys (app inventory) and
 //! the evidence keys (UserAssist, BAM).
 //!
-//! DeadWeight v1 is read-only, so this wrapper offers read operations
-//! only — there is intentionally no write path anywhere in the crate.
+//! Collection is read-only. The write operations at the bottom of
+//! the `RegKey` impl exist for exactly one purpose: the disable
+//! tier's StartupApproved values, written through the `action_win`
+//! platform implementation. Nothing else in the crate writes to
+//! the registry, and no Run/RunOnce value is ever written or
+//! deleted — disabling a startup item changes only its
+//! StartupApproved state, the same mechanism Task Manager uses.
 
 use dw_core::model::{AuditItem, Kind};
 use dw_core::time::install_date_from_yyyymmdd;
 use windows::core::{PCWSTR, PWSTR};
 use windows::Win32::Foundation::WIN32_ERROR;
 use windows::Win32::System::Registry::{
-    RegCloseKey, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW, RegQueryValueExW, HKEY,
-    HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ, REG_DWORD, REG_EXPAND_SZ, REG_SZ,
+    RegCloseKey, RegCreateKeyExW, RegDeleteValueW, RegEnumKeyExW, RegEnumValueW, RegOpenKeyExW,
+    RegQueryValueExW, RegSetValueExW, HKEY, HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE, KEY_READ,
+    KEY_SET_VALUE, REG_BINARY, REG_DWORD, REG_EXPAND_SZ, REG_OPTION_NON_VOLATILE, REG_SZ,
     REG_VALUE_TYPE,
 };
 
@@ -128,6 +134,115 @@ impl RegKey {
             return None;
         }
         Some(u32::from_le_bytes(data))
+    }
+
+    /// Open a subkey with write access (`KEY_READ | KEY_SET_VALUE`),
+    /// for the StartupApproved platform operations.
+    pub(crate) fn open_with_write(root: HKEY, subkey: &str) -> Option<RegKey> {
+        let wide_subkey = wide(subkey);
+        let mut handle = HKEY::default();
+        // SAFETY: `wide_subkey` is NUL-terminated and lives for the
+        // call; `handle` is a valid out-pointer.
+        let error = unsafe {
+            RegOpenKeyExW(
+                root,
+                PCWSTR(wide_subkey.as_ptr()),
+                None,
+                KEY_READ | KEY_SET_VALUE,
+                &mut handle,
+            )
+        };
+        if error == WIN32_ERROR(ERROR_SUCCESS_CODE) {
+            Some(RegKey(handle))
+        } else {
+            None
+        }
+    }
+
+    /// Create (or open) a subkey with write access. Used for the
+    /// StartupApproved keys, which may not exist yet on a machine
+    /// where nothing has ever been disabled through Windows.
+    pub(crate) fn create_with_write(root: HKEY, subkey: &str) -> Option<RegKey> {
+        let wide_subkey = wide(subkey);
+        let mut handle = HKEY::default();
+        // SAFETY: `wide_subkey` is NUL-terminated and lives for the
+        // call; `handle` is a valid out-pointer; no class, no
+        // security attributes, non-volatile — the documented
+        // defaults for application keys.
+        let error = unsafe {
+            RegCreateKeyExW(
+                root,
+                PCWSTR(wide_subkey.as_ptr()),
+                None,
+                PCWSTR::null(),
+                REG_OPTION_NON_VOLATILE,
+                KEY_READ | KEY_SET_VALUE,
+                None,
+                &mut handle,
+                None,
+            )
+        };
+        if error == WIN32_ERROR(ERROR_SUCCESS_CODE) {
+            Some(RegKey(handle))
+        } else {
+            None
+        }
+    }
+
+    /// Whether a value with this name exists under the key.
+    pub(crate) fn has_value(&self, name: &str) -> bool {
+        self.values().iter().any(|(n, _, _)| n == name)
+    }
+
+    /// A value's raw bytes, whatever its type (used for
+    /// StartupApproved blobs, which are `REG_BINARY`).
+    pub(crate) fn get_binary(&self, name: &str) -> Option<Vec<u8>> {
+        self.values()
+            .into_iter()
+            .find(|(n, _, _)| n == name)
+            .map(|(_, _, data)| data)
+    }
+
+    /// Write a `REG_BINARY` value.
+    pub(crate) fn set_binary(&self, name: &str, bytes: &[u8]) -> Result<(), String> {
+        let wide_name = wide(name);
+        // SAFETY: `wide_name` is NUL-terminated and lives for the
+        // call; the slice carries its own length, as the binding
+        // requires.
+        let error = unsafe {
+            RegSetValueExW(
+                self.0,
+                PCWSTR(wide_name.as_ptr()),
+                None,
+                REG_BINARY,
+                Some(bytes),
+            )
+        };
+        if error == WIN32_ERROR(ERROR_SUCCESS_CODE) {
+            Ok(())
+        } else {
+            Err(format!(
+                "writing registry value {name:?} failed (error {})",
+                error.0
+            ))
+        }
+    }
+
+    /// Delete a value. Deleting an absent value is an error at the
+    /// API level; callers check `has_value` first when absence is a
+    /// valid end state.
+    pub(crate) fn delete_value(&self, name: &str) -> Result<(), String> {
+        let wide_name = wide(name);
+        // SAFETY: `wide_name` is NUL-terminated and lives for the call.
+        let error = unsafe { RegDeleteValueW(self.0, PCWSTR(wide_name.as_ptr())) };
+        if error == WIN32_ERROR(ERROR_SUCCESS_CODE) {
+            Ok(())
+        } else {
+            Err(format!(
+                "deleting registry value {name:?} failed (error {})",
+                error.0
+            ))
+        }
     }
 
     /// Names of all subkeys, in enumeration order.

@@ -40,12 +40,19 @@ and automated contributors alike.
 
 ## Safety rules (product-specific, non-negotiable)
 
-- **v1 is read-only — no mutation code paths at all.** Slice 1 has no
-  remove, disable, or modify functionality, and no code path that
-  could grow one by accident: the registry wrapper exposes read
-  operations only. The single deletion the product performs is
-  `purge`, which deletes DeadWeight's *own* audit store at the
-  user's explicit request.
+- **v1 = audit + the disable tier for services and startup items
+  only; apps, features, and capabilities are never mutated.** The
+  audit itself is read-only. The entire mutation surface is two
+  operations, both executed only by the action engine after a
+  journal entry is written: a service's start type (never
+  start/stop) and a startup item's StartupApproved value (never
+  the Run value or shortcut itself). The registry wrapper's write
+  operations exist solely for StartupApproved values. There is no
+  remove or uninstall functionality for system items anywhere;
+  the deletions the product performs are `purge` (DeadWeight's
+  *own* audit store, at the user's explicit request) and undo
+  restoring a recorded prior state (including removing a
+  StartupApproved value that did not exist before a disable).
 - **Nothing is recommended on suspicion.** Every recommendation must
   cite its evidence in the report (size as reported, install date,
   evidence sources, matched executable, rule matched). If the

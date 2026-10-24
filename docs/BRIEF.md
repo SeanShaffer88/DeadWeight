@@ -50,16 +50,31 @@ report and README must never imply removal capability in v1.
 - `dw-core` — pure: model, evidence parsing (ROT13, UserAssist
   72-byte layout, FILETIME, Prefetch names), DISM output parsing,
   tiering rules, report. `#![forbid(unsafe_code)]`.
-- `dw-win` — collector (registry + DISM + Prefetch), evidence
-  matching/fusion, atomic local store + purge. `unsafe` only in the
-  `win` module, read-only operations only.
-- `deadweight` — CLI: `audit`, `report`, `purge`.
+- `dw-win` — collector (registry + DISM + Prefetch + SCM +
+  StartupApproved reads), evidence matching/fusion, atomic local
+  store + purge, and the disable tier (`action/`: plan, journal,
+  engine, export; `win`: the platform and restore-point
+  implementations). `unsafe` only in the `win` module. Collection
+  is read-only; the only writes to the system are the disable
+  tier's two operations — a service's start type and a startup
+  item's StartupApproved value — both through the journaled
+  engine.
+- `deadweight` — CLI: `audit`, `report`, `disable`, `enable`,
+  `journal`, `disabled`, `export`, `purge`.
+
+## Slice 2 (built): the disable tier
+
+Services and startup items are inventoried (SCM; Run/RunOnce keys;
+Startup folders), tiered under rules version 2 (protected-services
+denylist shared by tiering and the disable command), and can be
+disabled and re-enabled through the family safety contract:
+restore point attempted first, journal written before mutation,
+verify by re-read, 30-day watch list. Optional features,
+capabilities, and apps are never mutated — for them the report
+remains the whole product, in every v1 slice.
 
 ## Later slices
 
-- Slice 2: disable tier (services/helpers inventory; disable-only
-  quarantine with restore point, journal, undo — the family safety
-  contract).
 - Slice 3: seasonal/safety UX, audit-over-audit comparison.
 
 ## Out of scope

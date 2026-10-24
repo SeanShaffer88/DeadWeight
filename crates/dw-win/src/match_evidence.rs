@@ -128,6 +128,70 @@ pub fn find_evidence(app_name: &str, observations: &[ExeEvidence]) -> Option<Evi
     best.map(|(_, _, _, exe_name, group)| fuse_observations(&group, exe_name))
 }
 
+/// The fused evidence for one known executable — the services and
+/// startup-items path, where the executable is identified exactly
+/// (from its binary path or target command) rather than guessed from
+/// a display name. Matching is by normalized base key, exact only:
+/// a service's `helper.exe` must not inherit evidence for a different
+/// `helper`-prefixed program.
+#[must_use]
+pub fn evidence_for_exe(exe_path_or_name: &str, observations: &[ExeEvidence]) -> Option<Evidence> {
+    let key = dw_core::evidence_parse::exe_base_key(exe_path_or_name);
+    if key.is_empty() {
+        return None;
+    }
+    let group: Vec<ExeEvidence> = observations
+        .iter()
+        .filter(|o| o.base_key == key)
+        .cloned()
+        .collect();
+    if group.is_empty() {
+        return None;
+    }
+    let exe_name = group[0].exe_name.clone();
+    Some(fuse_observations(&group, &exe_name))
+}
+
+/// Which inventoried app an executable belongs to: the app whose
+/// install location is the executable's directory or one of its
+/// ancestors. Paths compare case-insensitively with normalized
+/// separators; the longest (most specific) install location wins.
+/// Returns the app's display name.
+#[must_use]
+pub fn parent_app_for(exe_path: &str, apps: &[dw_core::model::AuditItem]) -> Option<String> {
+    let exe_dir = dw_core::service_parse::parent_dir_normalized(exe_path);
+    if exe_dir.is_empty() {
+        return None;
+    }
+    let mut best: Option<(usize, &str)> = None;
+    for app in apps {
+        if app.kind != dw_core::model::Kind::App {
+            continue;
+        }
+        let Some(location) = &app.install_location else {
+            continue;
+        };
+        let location = dw_core::service_parse::parent_dir_normalized(&format!(
+            "{}\\placeholder.exe",
+            location.trim_end_matches(['\\', '/'])
+        ));
+        if location.is_empty() {
+            continue;
+        }
+        if exe_dir == location || exe_dir.starts_with(&format!("{location}\\")) {
+            let specificity = location.len();
+            let better = match best {
+                None => true,
+                Some((len, _)) => specificity > len,
+            };
+            if better {
+                best = Some((specificity, app.name.as_str()));
+            }
+        }
+    }
+    best.map(|(_, name)| name.to_owned())
+}
+
 /// The evidence window in whole days: from the oldest dated
 /// observation to `now_unix`. `0` when no observation carries a date.
 #[must_use]
@@ -233,6 +297,58 @@ mod tests {
         // the substring group's newer timestamp.
         let evidence = find_evidence("Widget Studio", &observations).expect("match");
         assert_eq!(evidence.matched_exe.as_deref(), Some("widgetstudio.exe"));
+    }
+
+    #[test]
+    fn evidence_for_exe_is_exact_key_only() {
+        let observations = vec![
+            observation("helper.exe", EvidenceSource::Bam, Some(300), None),
+            observation("helper.exe", EvidenceSource::Prefetch, Some(100), None),
+            observation("helperpro.exe", EvidenceSource::Bam, Some(999), None),
+        ];
+        let evidence =
+            evidence_for_exe("C:\\Apps\\Helper\\HELPER.EXE", &observations).expect("exact");
+        assert_eq!(evidence.sources.len(), 2);
+        assert_eq!(evidence.last_used_unix, Some(300));
+        assert_eq!(evidence.matched_exe.as_deref(), Some("helper.exe"));
+        // No substring matching on this path: a prefix-sibling does
+        // not count, and an unknown exe gets nothing.
+        assert!(evidence_for_exe("C:\\Apps\\help.exe", &observations).is_none());
+        assert!(evidence_for_exe("C:\\Apps\\unknown.exe", &observations).is_none());
+    }
+
+    fn app_with_location(name: &str, location: Option<&str>) -> dw_core::model::AuditItem {
+        let mut item = dw_core::model::AuditItem::new(name, dw_core::model::Kind::App, "installed");
+        item.install_location = location.map(str::to_owned);
+        item
+    }
+
+    #[test]
+    fn parent_app_matches_install_location_prefix() {
+        let apps = vec![
+            app_with_location("Suite", Some("C:\\Program Files\\Suite")),
+            app_with_location(
+                "Suite Helper Pack",
+                Some("C:\\Program Files\\Suite\\Helper\\"),
+            ),
+            app_with_location("Other", Some("D:\\Other")),
+            app_with_location("No Location", None),
+        ];
+        // The longest matching install location wins.
+        assert_eq!(
+            parent_app_for("c:/program files/suite/helper/bin/tool.exe", &apps).as_deref(),
+            Some("Suite Helper Pack")
+        );
+        assert_eq!(
+            parent_app_for("C:\\Program Files\\Suite\\main.exe", &apps).as_deref(),
+            Some("Suite")
+        );
+        assert_eq!(parent_app_for("C:\\Elsewhere\\x.exe", &apps), None);
+        // A sibling directory sharing a string prefix is not a match.
+        assert_eq!(
+            parent_app_for("C:\\Program Files\\SuiteExtra\\x.exe", &apps),
+            None
+        );
     }
 
     #[test]

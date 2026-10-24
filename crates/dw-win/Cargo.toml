@@ -13,12 +13,21 @@ serde_json = { workspace = true }
 
 # The collector's live-system access is Windows-only. All bindings come
 # from the `windows` crate (0.61, the version the rest of SEAN's
-# projects pin); `windows-sys` is not needed — the only API surface
-# used here is the registry, present in `windows` 0.61.3's generated
-# sources. DISM is driven through `std::process` and Prefetch through
-# `std::fs`, so no further bindings are required.
+# projects pin); `windows-sys` is not needed — the API surface used
+# here (registry, Service Control Manager, and for the disable tier
+# LibraryLoader + Security) is present in `windows` 0.61.3's generated
+# sources. Slice 2 adds the SCM bindings for the services inventory
+# and start-type changes. DISM is driven through `std::process` and
+# Prefetch through `std::fs`, so no further bindings are required.
+# System Restore is runtime-loaded from srclient.dll instead of the
+# crate's generated binding (which links sfc.dll while the Learn
+# reference documents the export in srclient.dll); see
+# src/win/restore.rs.
 [target.'cfg(target_os = "windows")'.dependencies]
 windows = { version = "0.61", features = [
     "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_LibraryLoader",
     "Win32_System_Registry",
+    "Win32_System_Services",
 ] }

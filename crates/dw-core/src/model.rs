@@ -9,7 +9,12 @@ use serde::{Deserialize, Serialize};
 
 /// Current audit schema version. Bump when the JSON shape changes in a
 /// way older readers cannot tolerate; migrations belong with the bump.
-pub const SCHEMA_VERSION: u32 = 1;
+/// Version 2 (slice 2) added the `Service` and `StartupItem` kinds
+/// plus their fields; older readers cannot parse audits containing
+/// them, hence the bump. New fields on existing kinds are all
+/// `serde(default)`, so version-2 readers still parse version-1
+/// audits.
+pub const SCHEMA_VERSION: u32 = 2;
 
 /// The category of an audited item.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -20,6 +25,11 @@ pub enum Kind {
     OptionalFeature,
     /// A Windows capability (DISM `/Get-Capabilities`).
     Capability,
+    /// A Windows service (Service Control Manager), slice 2.
+    Service,
+    /// A startup item: a Run/RunOnce registry value or a file in a
+    /// Startup folder, slice 2.
+    StartupItem,
 }
 
 impl Kind {
@@ -30,7 +40,104 @@ impl Kind {
             Kind::App => "App",
             Kind::OptionalFeature => "Optional feature",
             Kind::Capability => "Capability",
+            Kind::Service => "Service",
+            Kind::StartupItem => "Startup item",
         }
+    }
+}
+
+/// Where a startup item lives. The exact source matters: the disable
+/// engine acts on one source at a time, and audit items record theirs
+/// so reports (and later, disable commands) never have to guess.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum StartupSource {
+    /// `HKCU\...\Run`
+    RunHkcu,
+    /// `HKLM\...\Run`
+    RunHklm,
+    /// `HKLM\Software\WOW6432Node\...\Run`
+    RunHklmWow64,
+    /// `HKCU\...\RunOnce`
+    RunOnceHkcu,
+    /// `HKLM\...\RunOnce`
+    RunOnceHklm,
+    /// `HKLM\Software\WOW6432Node\...\RunOnce`
+    RunOnceHklmWow64,
+    /// The per-user Startup folder.
+    StartupFolderUser,
+    /// The common (all-users) Startup folder.
+    StartupFolderCommon,
+}
+
+impl StartupSource {
+    /// Short CLI token for the source (used by `disable --source`).
+    #[must_use]
+    pub fn token(self) -> &'static str {
+        match self {
+            StartupSource::RunHkcu => "run-hkcu",
+            StartupSource::RunHklm => "run-hklm",
+            StartupSource::RunHklmWow64 => "run-wow64",
+            StartupSource::RunOnceHkcu => "runonce-hkcu",
+            StartupSource::RunOnceHklm => "runonce-hklm",
+            StartupSource::RunOnceHklmWow64 => "runonce-wow64",
+            StartupSource::StartupFolderUser => "folder-user",
+            StartupSource::StartupFolderCommon => "folder-common",
+        }
+    }
+
+    /// Parse a `--source` token back into a source.
+    #[must_use]
+    pub fn from_token(token: &str) -> Option<StartupSource> {
+        match token {
+            "run-hkcu" => Some(StartupSource::RunHkcu),
+            "run-hklm" => Some(StartupSource::RunHklm),
+            "run-wow64" => Some(StartupSource::RunHklmWow64),
+            "runonce-hkcu" => Some(StartupSource::RunOnceHkcu),
+            "runonce-hklm" => Some(StartupSource::RunOnceHklm),
+            "runonce-wow64" => Some(StartupSource::RunOnceHklmWow64),
+            "folder-user" => Some(StartupSource::StartupFolderUser),
+            "folder-common" => Some(StartupSource::StartupFolderCommon),
+            _ => None,
+        }
+    }
+
+    /// All sources, for help text and exhaustive resolution.
+    pub const ALL: [StartupSource; 8] = [
+        StartupSource::RunHkcu,
+        StartupSource::RunHklm,
+        StartupSource::RunHklmWow64,
+        StartupSource::RunOnceHkcu,
+        StartupSource::RunOnceHklm,
+        StartupSource::RunOnceHklmWow64,
+        StartupSource::StartupFolderUser,
+        StartupSource::StartupFolderCommon,
+    ];
+
+    /// Human-readable description of where the item lives.
+    #[must_use]
+    pub fn describe(self) -> &'static str {
+        match self {
+            StartupSource::RunHkcu => "the current user's Run registry key",
+            StartupSource::RunHklm => "the machine-wide Run registry key",
+            StartupSource::RunHklmWow64 => "the machine-wide 32-bit Run registry key",
+            StartupSource::RunOnceHkcu => "the current user's RunOnce registry key",
+            StartupSource::RunOnceHklm => "the machine-wide RunOnce registry key",
+            StartupSource::RunOnceHklmWow64 => "the machine-wide 32-bit RunOnce registry key",
+            StartupSource::StartupFolderUser => "the current user's Startup folder",
+            StartupSource::StartupFolderCommon => "the common Startup folder",
+        }
+    }
+
+    /// Whether this source is a RunOnce key. RunOnce items run once
+    /// and remove themselves, so they are never disable candidates.
+    #[must_use]
+    pub fn is_run_once(self) -> bool {
+        matches!(
+            self,
+            StartupSource::RunOnceHkcu
+                | StartupSource::RunOnceHklm
+                | StartupSource::RunOnceHklmWow64
+        )
     }
 }
 
@@ -136,7 +243,8 @@ impl Default for Evidence {
     }
 }
 
-/// One audited item: an installed app, optional feature, or capability.
+/// One audited item: an installed app, optional feature, capability,
+/// service, or startup item.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuditItem {
     pub name: String,
@@ -144,7 +252,10 @@ pub struct AuditItem {
     pub kind: Kind,
     /// State as reported by the inventory source: `installed` for
     /// apps; the DISM state (`Enabled`/`Disabled`,
-    /// `Installed`/`Not Present`, …) for features and capabilities.
+    /// `Installed`/`Not Present`, …) for features and capabilities;
+    /// the run state (`Running`/`Stopped`/…) for services; `unknown`
+    /// for startup items — the inventory deliberately does not read
+    /// the `StartupApproved` state, so it does not claim one.
     pub state: String,
     /// On-disk size in bytes **as reported by Windows** (for apps, the
     /// Uninstall key's `EstimatedSize`). `None` means Windows does not
@@ -154,6 +265,41 @@ pub struct AuditItem {
     pub install_date: Option<String>,
     /// Install location as reported by the Uninstall key, when present.
     pub install_location: Option<String>,
+    /// Services only: the SCM start type (`dwStartType`: 0 boot,
+    /// 1 system, 2 automatic, 3 manual, 4 disabled), when the
+    /// service's configuration could be read.
+    #[serde(default)]
+    pub start_type: Option<u32>,
+    /// Services only: whether automatic start is delayed
+    /// (`SERVICE_DELAYED_AUTO_START_INFO`). Delayed automatic is
+    /// still start type 2; this flag only refines the label.
+    #[serde(default)]
+    pub delayed_start: bool,
+    /// Services only: the service's binary path with surrounding
+    /// quotes and command-line arguments stripped (see
+    /// `service_parse::exe_path_from_binary_path`).
+    #[serde(default)]
+    pub binary_path: Option<String>,
+    /// Whether the item's executable lives under the Windows
+    /// directory recorded in [`AuditSnapshot::windows_dir`], as
+    /// computed by the collector (services and startup items only).
+    /// Tiering treats Windows-directory programs as OS components.
+    #[serde(default)]
+    pub binary_in_windows_dir: bool,
+    /// Startup items only: the target as reported — the command line
+    /// from a Run/RunOnce value, or the file path for Startup-folder
+    /// items.
+    #[serde(default)]
+    pub target: Option<String>,
+    /// Startup items only: which source the item came from.
+    #[serde(default)]
+    pub startup_source: Option<StartupSource>,
+    /// Services and startup items only: the name of the inventoried
+    /// app whose install location contains this item's executable,
+    /// when one does. Tiering uses it as context: a helper belonging
+    /// to an app that is still used is not a disable candidate.
+    #[serde(default)]
+    pub parent_app: Option<String>,
     pub evidence: Evidence,
 }
 
@@ -169,6 +315,13 @@ impl AuditItem {
             size_bytes: None,
             install_date: None,
             install_location: None,
+            start_type: None,
+            delayed_start: false,
+            binary_path: None,
+            binary_in_windows_dir: false,
+            target: None,
+            startup_source: None,
+            parent_app: None,
             evidence: Evidence::none(),
         }
     }
@@ -188,6 +341,12 @@ pub struct AuditSnapshot {
     /// could be read at all. Tiering and the report's seasonal warning
     /// are driven by this number.
     pub evidence_window_days: u32,
+    /// The machine's Windows directory as reported by the collector
+    /// (`%SystemRoot%`, e.g. `C:\Windows`). Tiering compares service
+    /// and startup binary paths against it. `None` in audits written
+    /// before slice 2; tiering then assumes `C:\Windows`.
+    #[serde(default)]
+    pub windows_dir: Option<String>,
     pub items: Vec<AuditItem>,
 }
 
@@ -263,6 +422,7 @@ mod tests {
             schema_version: SCHEMA_VERSION,
             captured_at: "2026-10-24T20:56:00Z".to_owned(),
             evidence_window_days: 212,
+            windows_dir: Some("C:\\Windows".to_owned()),
             items: vec![item],
         };
         let json = snapshot.to_json().expect("serialize");

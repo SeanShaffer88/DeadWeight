@@ -106,6 +106,19 @@ pub fn parse_iso_utc(text: &str) -> Option<i64> {
     Some(days * 86_400 + hour * 3600 + minute * 60 + second)
 }
 
+/// Convert Unix epoch seconds to a Windows FILETIME (100-nanosecond
+/// intervals since 1601-01-01 UTC). Negative inputs saturate to 0.
+/// This is the timestamp format the `StartupApproved` value carries.
+#[must_use]
+pub fn filetime_from_unix(unix: i64) -> u64 {
+    /// FILETIME intervals between 1601-01-01 and 1970-01-01.
+    const EPOCH_DELTA_100NS: i64 = 116_444_736_000_000_000;
+    let intervals = unix
+        .saturating_mul(10_000_000)
+        .saturating_add(EPOCH_DELTA_100NS);
+    u64::try_from(intervals).unwrap_or(0)
+}
+
 /// Days since the Unix epoch for an ISO date string (`YYYY-MM-DD`).
 #[must_use]
 pub fn iso_date_days(text: &str) -> Option<i64> {
@@ -181,5 +194,15 @@ mod tests {
     #[test]
     fn format_date_drops_time() {
         assert_eq!(format_unix_date(1_709_164_800 + 3_600), "2024-02-29");
+    }
+
+    #[test]
+    fn filetime_conversion_round_trips_with_evidence_parse() {
+        assert_eq!(filetime_from_unix(0), 116_444_736_000_000_000);
+        assert_eq!(
+            crate::evidence_parse::filetime_to_unix(filetime_from_unix(1_709_164_800)),
+            Some(1_709_164_800)
+        );
+        assert_eq!(filetime_from_unix(-5), 116_444_735_950_000_000);
     }
 }

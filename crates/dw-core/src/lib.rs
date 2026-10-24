@@ -14,4 +14,5 @@ pub mod evidence_parse;
 pub mod model;
 pub mod report;
 pub mod rules;
+pub mod service_parse;
 pub mod time;

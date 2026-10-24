@@ -4,13 +4,17 @@
 
 DeadWeight finds what is installed on a Windows PC but never used —
 and shows its evidence for every claim. It inventories installed
-apps, optional features, and capabilities, cross-checks them
-against the usage records Windows itself keeps (Prefetch,
-UserAssist, BAM), and writes a tiered report: what looks safe to
-remove, what must never be touched, and — the honest middle —
-everything it cannot make a recommendation about. **v1 is entirely
-read-only: it recommends, it never removes, disables, or changes
-anything.** Local-only, no telemetry, MIT.
+apps, optional features and capabilities, services, and startup
+items, cross-checks them against the usage records Windows itself
+keeps (Prefetch, UserAssist, BAM), and writes a tiered report: what
+looks safe to remove, what could be disabled and watched, what must
+never be touched, and — the honest middle — everything it cannot
+make a recommendation about. **The audit is read-only; the one
+thing DeadWeight can change is narrow and reversible: a service's
+start type or a startup item's enabled state, only through an
+explicit `disable` command that attempts a restore point first,
+journals the action before it happens, and can be undone.**
+Nothing is ever removed. Local-only, no telemetry, MIT.
 
 ## Why
 
@@ -35,10 +39,17 @@ guessing.
   tiering rules (`rules.rs`, versioned — see below) and currently
   enabled. Removal of features goes through Windows' own reversible
   path (a feature can be re-enabled the same way).
-- **Disable and watch** — the tier for services and helper programs
-  that can be disabled, watched, and re-enabled before any removal
-  decision. Slice 1 does not inventory services, so this section is
-  empty by design; it arrives with the disable tier in a later slice.
+- **Disable and watch** — services and startup items that start on
+  their own, live outside the Windows folder, and have no usage
+  evidence for themselves or the app they belong to. These are the
+  only items DeadWeight can act on: `deadweight disable` sets a
+  service's start type to Disabled (a running service is never
+  stopped) or marks a startup item disabled through the same
+  StartupApproved mechanism Task Manager uses. The item then sits
+  on a 30-day watch (`deadweight disabled`); re-enable it any time
+  with `deadweight enable`. Protected Windows, security, and update
+  services are never candidates — they are never-touch, in the
+  rules and in the disable command itself.
 - **Never touch** — security components (Defender, Security Health,
   the Windows security stack, …) are listed explicitly, so you can
   see they were considered and excluded — never silently skipped,
@@ -85,16 +96,30 @@ treats it that way:
 
 - Everything is read and processed **on the machine**. Nothing is
   uploaded, phoned home, or telemetered — there is no network code.
-- Stored audits live only under `%LOCALAPPDATA%\DeadWeight\audits`.
+- Stored audits and the action journal live only under
+  `%LOCALAPPDATA%\DeadWeight` (`audits` and `journal` folders).
 - `deadweight purge` deletes the whole audit store in one action
   and reports what it removed.
+- `deadweight export <dir>` is the one way data leaves the store,
+  and only when you run it: it copies the journal and the latest
+  audit into a folder you choose, with a manifest.
 
 ## Usage
 
 ```
-deadweight audit [--out <path>]   collect an audit, save it, print the report (Windows)
-deadweight report <audit.json>    print the report for a saved audit (any platform)
-deadweight purge                  delete the local audit store
+deadweight audit [--out <path>]     collect an audit, save it, print the report (Windows)
+deadweight report <audit.json>      print the report for a saved audit (any platform)
+deadweight disable service <name> [--no-restore-point] [--yes]
+deadweight disable startup <name> [--source <token>] [--no-restore-point] [--yes]
+                                    disable a service or startup item (Windows);
+                                    dry-run by default — without --yes, the plan
+                                    and current state print and nothing changes
+deadweight enable [--id <id>]       undo a disable (Windows; default: newest)
+deadweight journal                  list journal entries (any platform)
+deadweight disabled                 the watch list: what is still disabled,
+                                    since when, and whether its watch is due
+deadweight export <dir>             copy journal + latest audit to a folder
+deadweight purge                    delete the local audit store
 ```
 
 Try the report renderer without a Windows machine:
@@ -110,8 +135,13 @@ change to what DeadWeight recommends is a reviewable diff.
 
 ## Limitations (v1)
 
-- **Read-only.** No removal, no disabling, no UI yet. Any tool that
-  claims this version changes your PC is not this version.
+- **No removal, ever, in v1.** The audit is read-only and there is
+  no UI yet. The only changes DeadWeight makes are the two
+  disable-tier operations above — a service start type, a startup
+  item's StartupApproved state — each explicit, journaled, and
+  undoable. Optional features, capabilities, and apps are never
+  changed; their tiers are recommendations for you to act on (or
+  not) through Windows' own tools.
 - **DISM needs elevation.** Feature and capability inventory runs
   `dism.exe /Online …`, which most Windows builds only allow from
   an elevated process. Without it, the audit continues with a
@@ -137,22 +167,37 @@ Unverified terms:
 
 - **Verified:** the pure core — audit model, evidence parsing
   (ROT13, UserAssist layout, FILETIME, Prefetch names), DISM
-  parsing, tiering rules, report rendering — and the evidence
-  matching/store logic, all unit-tested on the host gate
-  (`cargo fmt --all`, `cargo clippy --all-targets -- -D warnings`
-  on host and Windows targets, full `cargo test`).
-- **Unverified:** everything that touches a real Windows machine —
-  the collector's runtime output, evidence-matching quality against
-  real Prefetch/UserAssist/BAM data, DISM behavior across builds.
-  The planted-PC validation plan in `docs/BRIEF.md` is the verdict;
-  until it runs, treat the collector as unproven.
-- **Not built:** the disable tier (slice 2), any UI, and any form
-  of removal. v1 cannot change a PC.
+  parsing, tiering rules (version 2, including the protected-
+  services denylist and the service/startup candidacy rules),
+  report rendering — the evidence matching/store logic, and the
+  disable tier's plan/journal/engine/export state machine, all
+  unit-tested on the host gate (`cargo fmt --all`,
+  `cargo clippy --all-targets -- -D warnings` on host and Windows
+  targets, full `cargo test`).
+- **Partially Verified:** the collector (now including services
+  and startup items) and the startup disable/enable path run
+  against a live Windows system in CI on every push — collection
+  succeeds and a planted startup item round-trips through disable
+  and undo. A CI runner is not a real PC, so this is evidence, not
+  proof.
+- **Unverified:** everything else that touches a real Windows
+  machine — the collector's runtime output quality,
+  evidence-matching quality against real Prefetch/UserAssist/BAM
+  data, DISM behavior across builds, **service start-type
+  mutation, and restore-point creation**. The planted-PC
+  validation plan in `docs/BRIEF.md` is the verdict; until it runs,
+  treat those paths as unproven.
+- **Not built:** any UI, and any form of removal. Features,
+  capabilities, and apps remain report-only in v1 — plainly:
+  DeadWeight will never be the tool that uninstalls them in this
+  version.
 
 ## Layout
 
 - `crates/dw-core` — pure model, parsing, tiering rules, report.
-- `crates/dw-win` — the Windows collector and local audit store.
+- `crates/dw-win` — the Windows collector, the disable tier
+  (plan/journal/engine/export plus the Windows platform and
+  restore-point implementations), and the local store.
 - `crates/deadweight` — the CLI.
 
 ## License

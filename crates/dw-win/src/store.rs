@@ -31,6 +31,29 @@ pub fn default_audits_dir() -> PathBuf {
     default_app_dir().join("audits")
 }
 
+/// Directory journal entries are stored in by default:
+/// `%LOCALAPPDATA%\DeadWeight\journal` on Windows.
+#[must_use]
+pub fn default_journal_dir() -> PathBuf {
+    default_app_dir().join("journal")
+}
+
+/// The newest audit file in `dir`, if any. Audit file names are
+/// derived from their capture timestamps, so the greatest file name
+/// is the latest audit.
+#[must_use]
+pub fn latest_audit_in(dir: &Path) -> Option<PathBuf> {
+    let read = std::fs::read_dir(dir).ok()?;
+    read.filter_map(std::result::Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.ends_with(".audit.json"))
+        })
+        .max()
+}
+
 #[cfg(target_os = "windows")]
 fn base_data_dir() -> PathBuf {
     std::env::var_os("LOCALAPPDATA").map_or_else(|| PathBuf::from("."), PathBuf::from)
@@ -201,6 +224,7 @@ mod tests {
             schema_version: dw_core::model::SCHEMA_VERSION,
             captured_at: "2026-10-24T20:56:00Z".to_owned(),
             evidence_window_days: 42,
+            windows_dir: None,
             items: Vec::new(),
         };
         let path = dir.join(audit_filename(&audit.captured_at));

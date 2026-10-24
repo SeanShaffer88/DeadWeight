@@ -1,10 +1,12 @@
-//! DeadWeight Windows collector (slice 1, read-only).
+//! DeadWeight Windows layer: the collector and the disable tier.
 //!
-//! Reads the live system through supported Windows interfaces and
-//! emits a slice-1 [`AuditSnapshot`]:
+//! The collector reads the live system through supported Windows
+//! interfaces and emits an [`AuditSnapshot`]:
 //!
 //! - installed apps from the Uninstall registry keys,
 //! - optional features and capabilities via DISM,
+//! - services from the Service Control Manager and startup items
+//!   from the Run/RunOnce keys and Startup folders,
 //! - usage evidence from Prefetch, UserAssist, and BAM, fused and
 //!   matched onto apps by executable name (see
 //!   [`match_evidence`] for the matching rules and their limits).
@@ -12,19 +14,27 @@
 //! Collection is fault-tolerant per source: one failing source
 //! yields fewer items (or less evidence) plus an entry in
 //! [`CollectOutcome::warnings`], never a failed collection — unless
-//! the entire inventory failed. Nothing in this crate writes to the
-//! system: DeadWeight v1 is read-only, and the registry wrapper
-//! deliberately has no write operations.
+//! the entire inventory failed. Collection itself never writes to
+//! the system. The crate's only system writes are the disable
+//! tier's two operations in [`action`] (a service's start type, a
+//! startup item's StartupApproved value), executed only through
+//! the journaled engine.
 //!
 //! Runtime behaviour on a real Windows machine is **Unverified**
 //! until the field test in the project brief has compared collector
 //! output against the equivalent system tools.
 
+pub mod action;
 pub mod match_evidence;
 pub mod store;
 
 #[cfg(target_os = "windows")]
 mod win;
+
+#[cfg(target_os = "windows")]
+pub use win::action_win::{find_startup_sources, WindowsPlatform};
+#[cfg(target_os = "windows")]
+pub use win::restore::SystemRestorePoints;
 
 use dw_core::model::AuditSnapshot;
 

@@ -1,6 +1,6 @@
 # Roadmap
 
-## Slice 1 — Read-only audit (this version)
+## Slice 1 — Read-only audit (built)
 
 - Inventory: installed apps (Uninstall keys), optional features and
   capabilities (DISM), each with the state/size/date Windows reports.
@@ -13,22 +13,37 @@
   absence-of-evidence caveat in every report.
 - Local audit store under `%LOCALAPPDATA%\DeadWeight` with
   one-action `purge`.
-- **No actions of any kind.** Nothing in v1 mutates the system; the
-  only write outside DeadWeight's own store is nothing at all.
+- **No actions of any kind in this slice.** Nothing in slice 1
+  mutates the system.
 
-## Slice 2 — The disable tier
+## Slice 2 — The disable tier (built)
 
-- Inventory services and helper programs (the "Disable and watch"
-  tier becomes real).
-- Disable-only quarantine for that tier, following the family
-  safety contract: capture prior state first, restore point
-  attempted before any mutation, every action journaled *before* it
-  happens and undoable after a crash, user confirmation in
-  proportion to risk, never-touch rules enforced in code.
-- Watch period support: a disabled item is listed with its disable
-  date and one-click undo; nothing is removed in this slice either.
-- App/feature *removal* stays out until the watch data says the
-  disable tier is safe to stand on.
+- Inventory grew: services (SCM — name, start type including
+  delayed automatic, state, normalized program path) and startup
+  items (Run/RunOnce keys and both Startup folders) join the audit,
+  with exact-executable evidence and a recorded parent app. Rules
+  version 2 tiers them: protected services and Windows-folder
+  services are never candidates; a service or startup item is a
+  disable-and-watch candidate only with no usage evidence for
+  itself or its parent app.
+- Disable-only actions for services and startup items, following
+  the family safety contract: plan validated first (protected
+  services refused in code, RunOnce refused), prior state captured,
+  restore point attempted before any mutation (abort unless the
+  user explicitly proceeds without one), every action journaled
+  *before* it happens, verified by re-reading, undoable after a
+  crash. Dry-run by default in the CLI.
+- Watch period support: `deadweight disabled` lists what is still
+  disabled, since when, and flags items past their 30-day watch;
+  undo is `deadweight enable`. `deadweight export` copies the
+  journal and latest audit out with a manifest. Nothing is removed
+  in this slice either.
+- Verification status: engine/journal/plan are unit-tested; the
+  startup path is exercised against a live system in CI; service
+  mutation and restore-point creation stay **Unverified** until
+  the field test.
+- App/feature *removal* stays out — features and apps are
+  report-only for all of v1.
 
 ## Slice 3 — Seasonal and safety UX
 
